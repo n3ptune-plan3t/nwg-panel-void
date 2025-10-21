@@ -37,7 +37,7 @@ recommends=(
 short_desc="GTK3-based panel for sway and Hyprland Wayland compositors"
 homepage="https://github.com/nwg-piotr/nwg-panel"
 license="MIT"
-distfiles="https://github.com/nwg-piotr/nwg-panel/archive/refs/tags/v${version}.tar.gz"
+distfiles="https://github.com/nwg-piotr/nwg-panel/archive/v${version}.tar.gz"
 checksum="86489ef34d24e8c3f843202c477f539f141eb0cfcbedf48f0e20e4d5edf7f"
 maintainer="n3ptune-plan3t <n3ptune@plan3t>"
 
