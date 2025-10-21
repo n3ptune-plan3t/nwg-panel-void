@@ -1,3 +1,4 @@
+# Template file for 'nwg-panel'
 pkgname=nwg-panel
 version=0.10.12
 revision=1
@@ -22,12 +23,22 @@ depends=(
     "python3-netifaces"
     "python3-psutil"
     "python3-requests"
+    "python3-Pillow" # Added from requirements.txt
+)
+recommends=(
+    "wlr-randr"        # For non-sway Wayland WMs support
+    "swaybg"           # For the random wallpaper module
+    "swaync"           # For Sway Notification Center support
+    "ddcutil"          # For external displays brightness control
+    "upower"           # For multiple batteries support
+    "libheif"          # For HEIF support in Pillow
+    "nwg-icon-picker"  # For a graphical icon chooser
 )
 short_desc="GTK3-based panel for sway and Hyprland Wayland compositors"
 homepage="https://github.com/nwg-piotr/nwg-panel"
 license="MIT"
 distfiles="https://github.com/nwg-piotr/nwg-panel/archive/v${version}.tar.gz"
-checksum="86489ef34d24e8298c3f843202c477f539f141eb0cfcbedf48f0e20e4d5edf7f"
+checksum="86489ef34d24e8c3f843202c477f539f141eb0cfcbedf48f0e20e4d5edf7f"
 maintainer="n3ptune-plan3t <n3ptune@plan3t>"
 
 post_install() {
