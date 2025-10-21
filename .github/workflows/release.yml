@@ -1,71 +1,116 @@
-name: Build and Release
+name: build
+
 on:
   push:
     tags:
       - '*'
-  workflow_dispatch:
 
 jobs:
   build:
-    name: Build Package 📦
+    strategy:
+      max-parallel: 4
+      matrix:
+        include:
+          - { host: x86_64, target: x86_64 }
+          - { host: x86_64-musl, target: x86_64-musl }
+          - { host: x86_64, target: aarch64 }
+          - { host: x86_64-musl, target: aarch64-musl }
     runs-on: ubuntu-22.04
+
     steps:
-      - name: Checkout repository
+      # -------------------------------------------------
+      # Free up space on the runner (same as original)
+      # -------------------------------------------------
+      - name: free space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+
+      # -------------------------------------------------
+      # Checkout the nwg‑panel‑void source
+      # -------------------------------------------------
+      - name: checkout nwg-panel-void
         uses: actions/checkout@v4
-
-      - name: Clone void-packages
-        run: git clone --depth=1 https://github.com/void-linux/void-packages.git
-
-      - name: Install prerequisites
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y wget tar xz-utils ca-certificates
-
-      - name: Download and install XBPS static binaries
-        run: |
-          wget https://repo-default.voidlinux.org/static/xbps-static-latest.x86_64-musl.tar.xz
-          tar xvf xbps-static-latest.x86_64-musl.tar.xz
-          sudo install -Dm755 usr/bin/* /usr/local/bin/
-
-      - name: Bootstrap XBPS-src
-        working-directory: void-packages
-        run: |
-          export XBPS_ARCH=x86_64
-          ./xbps-src binary-bootstrap
-
-      - name: Copy template
-        run: cp -r srcpkgs/nwg-panel void-packages/srcpkgs/
-
-      - name: Allow restricted packages
-        run: echo XBPS_ALLOW_RESTRICTED=yes >> etc/conf
-        working-directory: /home/runner/work/nwg-panel-void/nwg-panel-void/void-packages
-
-      - name: Build package
-        run: ./xbps-src pkg nwg-panel
-        working-directory: /home/runner/work/nwg-panel-void/nwg-panel-void/void-packages
-
-      - name: Upload built packages
-        uses: actions/upload-artifact@v4
         with:
-          name: nwg-panel-packages
-          path: void-packages/hostdir/binpkgs/*.xbps
+          ref: master
+          path: nwg-panel-void
 
-  release:
-    name: Create GitHub Release 🚀
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Download built package from artifact
-        uses: actions/download-artifact@v4
+      # -------------------------------------------------
+      # Checkout void‑packages (unchanged)
+      # -------------------------------------------------
+      - name: checkout void-packages
+        uses: actions/checkout@v4
         with:
-          name: nwg-panel-packages
+          repository: void-linux/void-packages
+          ref: master
+          path: void-packages
 
-      - name: Create Release and Upload Asset
+      # -------------------------------------------------
+      # Copy the srcpkg into void‑packages
+      # -------------------------------------------------
+      - name: copy nwg-panel into srcpkgs
+        run: |
+          cp -rv nwg-panel-void/srcpkgs/nwg-panel void-packages/srcpkgs
+
+      # -------------------------------------------------
+      # Install xbps‑static (same URL as before)
+      # -------------------------------------------------
+      - name: prepare xbps-static
+        run: |
+          mkdir -p /opt/xbps
+          curl -LO http://repo-default.voidlinux.org/static/xbps-static-latest.x86_64-musl.tar.xz
+          tar xvf xbps-static-latest.x86_64-musl.tar.xz -C /opt/xbps
+          rm xbps-static-latest.x86_64-musl.tar.xz
+
+      # -------------------------------------------------
+      # Build the package for each matrix entry
+      # -------------------------------------------------
+      - name: build
+        env:
+          XBPS_TARGET_ARCH: ${{ matrix.target }}
+        run: |
+          export PATH="/opt/xbps/usr/bin/:$PATH"
+          cd void-packages
+          if [[ "${{ matrix.host }}" == "${{ matrix.target }}" ]]; then
+            ./xbps-src -A ${{ matrix.host }} binary-bootstrap
+            ./xbps-src pkg -j4 -A ${{ matrix.host }} nwg-panel
+          else
+            ./xbps-src -a ${{ matrix.target }} -A ${{ matrix.host }} binary-bootstrap
+            ./xbps-src pkg -j4 -a ${{ matrix.target }} -A ${{ matrix.host }} nwg-panel
+          fi
+
+      # -------------------------------------------------
+      # Sign the resulting .xbps files
+      # -------------------------------------------------
+      - name: sign
+        env:
+          XBPS_PASSPHRASE: ${{ secrets.SIGN_PASS }}
+          XBPS_TARGET_ARCH: ${{ matrix.target }}
+        working-directory: void-packages/hostdir/binpkgs/
+        run: |
+          export PATH="/opt/xbps/usr/bin/:$PATH"
+          xbps-rindex -r $PWD
+          xbps-rindex -s --signedby "index-0 <index@mailbox.org>" \
+            --privkey <(printf '%s' "${{ secrets.PRIV_KEY }}") $PWD
+          xbps-rindex -S --privkey <(printf '%s' "${{ secrets.PRIV_KEY }}") *.xbps
+          xbps-rindex -c $PWD
+
+      # -------------------------------------------------
+      # Show checksums (optional but useful)
+      # -------------------------------------------------
+      - name: checksum
+        working-directory: void-packages/hostdir/binpkgs/
+        run: |
+          sha256sum $(echo *.xbps)
+          sha512sum $(echo *.xbps)
+
+      # -------------------------------------------------
+      # Publish the built packages as a GitHub release
+      # -------------------------------------------------
+      - name: release
         uses: softprops/action-gh-release@v2
         with:
-          files: "*.xbps"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          files: |
+            void-packages/hostdir/binpkgs/*
